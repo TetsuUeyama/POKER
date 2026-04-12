@@ -1,0 +1,19 @@
+{
+  "name": "samurai-proto",
+  "size": 8,
+  "voxels": [
+    {"x": 1, "y": 4, "z": 0, "color": "#f5deb3", "bone": "head"},
+
+    {"x": 0, "y": 3, "z": 0, "color": "#4169e1", "bone": "arm.L"},
+    {"x": 1, "y": 3, "z": 0, "color": "#8b0000", "bone": "spine"},
+    {"x": 2, "y": 3, "z": 0, "color": "#4169e1", "bone": "arm.R"},
+
+    {"x": 1, "y": 2, "z": 0, "color": "#8b0000", "bone": "spine"},
+
+    {"x": 0, "y": 1, "z": 0, "color": "#2f4f4f", "bone": "leg.L"},
+    {"x": 2, "y": 1, "z": 0, "color": "#2f4f4f", "bone": "leg.R"},
+
+    {"x": 0, "y": 0, "z": 0, "color": "#8b4513", "bone": "leg.L"},
+    {"x": 2, "y": 0, "z": 0, "color": "#8b4513", "bone": "leg.R"}
+  ]
+}

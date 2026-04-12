@@ -39,3 +39,11 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# personal files
+question.md
+learning/notes/
+
+# wasm build artifacts
+wasm-lib/target/
+wasm-lib/pkg/
