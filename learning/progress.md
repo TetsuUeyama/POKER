@@ -75,7 +75,7 @@
 
 ## Phase 8: 3D Characters & Physics
 **作るもの: 駒の3Dモデル表示、移動アニメーション、衝突判定**
-- [ ] ボーン / スケルトン / アニメーション（Phase 10 Blender と合わせて実施）
+- [x] ボーン / スケルトン / アニメーション（途中 — 概念・スキニング・Action・NLA・glTFエクスポート済み、モーション調整は後日）
 - [x] 物理エンジン（Havok — 重力、質量、反発係数、衝突）
 - [x] キャラクター制御（キー入力 + applyForce + カメラのキー入力無効化）
 - [x] GLSL シェーダー入門（Phase 7 で ShaderMaterial を体験済み）
@@ -92,7 +92,7 @@
 - [x] Blender Python API（bpy）基礎 — 頂点・面の定義、メッシュ生成、マテリアル追加
 - [x] ヘッドレス実行（blender --background --python）
 - [x] glTFエクスポート → Babylon.js で SceneLoader.ImportMesh で読み込み
-- [ ] モーション/アニメーションエクスポート（必要になったら実施）
+- [x] モーション/アニメーションエクスポート（途中 — glTFエクスポートとBabylon.js読み込み済み、座標軸の調整は後日）
 
 ## Phase 11: WebAssembly
 **作るもの: ゲームロジック（AI思考、役判定）をWasmで高速化**

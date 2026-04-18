@@ -113,36 +113,44 @@ bpy.ops.object.mode_set(mode='EDIT')
 
 # デフォルトのボーンを root に使う
 # ボーンの head = 根元の位置、tail = 先端の位置
+#
+# モデル座標（Blender Z=上）:
+#   Y=0,1 → Z=0,1  脚
+#   Y=2,3 → Z=2,3  胴体+腕
+#   Y=4,5 → Z=4,5  頭
+#   腰はY=2の下端 → Z=2
+
 root_bone = armature.edit_bones[0]
 root_bone.name = "root"
-root_bone.head = (0, 0, 2)    # 腰の位置（x=0はアーマチュアのローカル座標）
+root_bone.head = (0, 0, 2)     # 腰の位置
 root_bone.tail = (0, 0, 2.5)
 
-# spine（胴体）— root の子
+# spine（胴体 Y=2〜3）— root の子
 spine = armature.edit_bones.new("spine")
 spine.head = (0, 0, 2)
-spine.tail = (0, 0, 3.5)
+spine.tail = (0, 0, 4)         # 胴体の上端
 spine.parent = root_bone
 
-# head（頭）— spine の子
+# head（頭 Y=4〜5）— spine の子
 head = armature.edit_bones.new("head")
-head.head = (0, 0, 3.5)
-head.tail = (0, 0, 4.5)
+head.head = (0, 0, 4)
+head.tail = (0, 0, 6)          # 頭の上端
 head.parent = spine
 
-# arm.L（左腕）— spine の子
+# arm.L（左腕 Y=2〜3, X=0）— spine の子
+# ボーンの根元は肩（胴体との接合部、Z=3.5あたり）
 arm_l = armature.edit_bones.new("arm.L")
-arm_l.head = (0, 0, 3)
-arm_l.tail = (-1, 0, 3)  # 左に伸びる
+arm_l.head = (0, 0, 3.5)       # 肩の位置
+arm_l.tail = (-1.5, 0, 3.5)    # 左に伸びる
 arm_l.parent = spine
 
-# arm.R（右腕）— spine の子
+# arm.R（右腕 Y=2〜3, X=2）— spine の子
 arm_r = armature.edit_bones.new("arm.R")
-arm_r.head = (0, 0, 3)
-arm_r.tail = (1, 0, 3)   # 右に伸びる
+arm_r.head = (0, 0, 3.5)
+arm_r.tail = (1.5, 0, 3.5)     # 右に伸びる
 arm_r.parent = spine
 
-# leg.L（左脚）— root の子
+# leg.L（左脚 Y=0〜1, X=0）— root の子
 leg_l = armature.edit_bones.new("leg.L")
 leg_l.head = (-0.5, 0, 2)
 leg_l.tail = (-0.5, 0, 0)  # 下に伸びる
@@ -245,30 +253,45 @@ def push_to_nla(action):
     armature_obj.animation_data.action = None  # アクティブから外す
 
 # ============================
+# 【座標系の整理】
+# ============================
+# Blender:     X=横, Y=奥行き(前が+Y), Z=上(上が+Z)
+# glTF変換後:  X=横, Y=上,             Z=奥行き
+#
+# 移動:
+#   上下に動かす → Z軸 (0, 0, 値)
+#   前後に動かす → Y軸 (0, 値, 0)  ← 前が+Y
+#
+# 回転:
+#   前後に傾ける（前屈/仰け反り）→ X軸回転 (値, 0, 0)
+#   腕を前後に振る → X軸回転（腕ボーンは横向きなので）
+#   体を左右にひねる → Z軸回転 (0, 0, 値)
+
+# ============================
 # Action 1: idle（待機）
 # ============================
 # 軽く上下に揺れる + 腕が少し揺れる
 idle_action = create_action("idle")
 
-# root: 上下に浮遊
+# root: 上下に浮遊（Z軸）
 root_pose.location = (0, 0, 0)
 root_pose.keyframe_insert(data_path="location", frame=1)
-root_pose.location = (0, 0, 0.15)
+root_pose.location = (0, 0, 0.15)  # Z+ = 上
 root_pose.keyframe_insert(data_path="location", frame=15)
 root_pose.location = (0, 0, 0)
 root_pose.keyframe_insert(data_path="location", frame=30)
 
-# 腕: 軽く前後に揺れる
+# 腕: X軸回転で前後に揺れる
 arm_l_pose.rotation_euler = (0, 0, 0)
 arm_l_pose.keyframe_insert(data_path="rotation_euler", frame=1)
-arm_l_pose.rotation_euler = (0, math.radians(10), 0)
+arm_l_pose.rotation_euler = (math.radians(10), 0, 0)   # X軸回転
 arm_l_pose.keyframe_insert(data_path="rotation_euler", frame=15)
 arm_l_pose.rotation_euler = (0, 0, 0)
 arm_l_pose.keyframe_insert(data_path="rotation_euler", frame=30)
 
 arm_r_pose.rotation_euler = (0, 0, 0)
 arm_r_pose.keyframe_insert(data_path="rotation_euler", frame=1)
-arm_r_pose.rotation_euler = (0, math.radians(-10), 0)
+arm_r_pose.rotation_euler = (math.radians(-10), 0, 0)  # 逆方向
 arm_r_pose.keyframe_insert(data_path="rotation_euler", frame=15)
 arm_r_pose.rotation_euler = (0, 0, 0)
 arm_r_pose.keyframe_insert(data_path="rotation_euler", frame=30)
@@ -282,7 +305,7 @@ print("Action 'idle': 30フレーム（上下浮遊 + 腕揺れ）")
 # 右腕を大きく振り下ろす + 体を前に傾ける
 attack_action = create_action("attack")
 
-# フレーム 1: 構え（溜め）
+# フレーム 1: 構え
 root_pose.location = (0, 0, 0)
 root_pose.keyframe_insert(data_path="location", frame=1)
 spine_pose.rotation_euler = (0, 0, 0)
@@ -290,18 +313,18 @@ spine_pose.keyframe_insert(data_path="rotation_euler", frame=1)
 arm_r_pose.rotation_euler = (0, 0, 0)
 arm_r_pose.keyframe_insert(data_path="rotation_euler", frame=1)
 
-# フレーム 5: 腕を後ろに振りかぶる
-arm_r_pose.rotation_euler = (0, math.radians(-60), 0)  # 後ろに引く
+# フレーム 5: 腕を後ろに振りかぶる（X軸回転、マイナス=後ろ）
+arm_r_pose.rotation_euler = (math.radians(-60), 0, 0)
 arm_r_pose.keyframe_insert(data_path="rotation_euler", frame=5)
-spine_pose.rotation_euler = (0, math.radians(-10), 0)  # 少し後ろに反る
+spine_pose.rotation_euler = (math.radians(-10), 0, 0)   # 少し後ろに反る
 spine_pose.keyframe_insert(data_path="rotation_euler", frame=5)
 
-# フレーム 8: 振り下ろし（速い！ フレーム間隔が短い = 速い動き）
-arm_r_pose.rotation_euler = (0, math.radians(80), 0)   # 前に大きく振る
+# フレーム 8: 振り下ろし（X軸回転、プラス=前）
+arm_r_pose.rotation_euler = (math.radians(80), 0, 0)
 arm_r_pose.keyframe_insert(data_path="rotation_euler", frame=8)
-spine_pose.rotation_euler = (0, math.radians(15), 0)   # 前に傾く
+spine_pose.rotation_euler = (math.radians(15), 0, 0)    # 前に傾く
 spine_pose.keyframe_insert(data_path="rotation_euler", frame=8)
-root_pose.location = (0, 0.2, 0)  # 少し前に踏み込む
+root_pose.location = (0, 0.2, 0)   # Y+ = 前に踏み込む
 root_pose.keyframe_insert(data_path="location", frame=8)
 
 # フレーム 15: 戻り
@@ -330,19 +353,19 @@ head_pose.rotation_euler = (0, 0, 0)
 head_pose.keyframe_insert(data_path="rotation_euler", frame=1)
 
 # フレーム 3: 衝撃（速い！）
-root_pose.location = (0, -0.3, 0)  # 後ろに押される
+root_pose.location = (0, -0.3, 0)  # Y- = 後ろに押される
 root_pose.keyframe_insert(data_path="location", frame=3)
-spine_pose.rotation_euler = (0, math.radians(-20), 0)  # 仰け反る
+spine_pose.rotation_euler = (math.radians(-20), 0, 0)   # X軸回転で仰け反る
 spine_pose.keyframe_insert(data_path="rotation_euler", frame=3)
-head_pose.rotation_euler = (0, math.radians(-15), 0)   # 頭が後ろに
+head_pose.rotation_euler = (math.radians(-15), 0, 0)    # 頭が後ろに
 head_pose.keyframe_insert(data_path="rotation_euler", frame=3)
 
 # フレーム 8: 少し戻る
 root_pose.location = (0, -0.1, 0)
 root_pose.keyframe_insert(data_path="location", frame=8)
-spine_pose.rotation_euler = (0, math.radians(5), 0)  # 少し前に反動
+spine_pose.rotation_euler = (math.radians(5), 0, 0)     # 少し前に反動
 spine_pose.keyframe_insert(data_path="rotation_euler", frame=8)
-head_pose.rotation_euler = (0, math.radians(5), 0)
+head_pose.rotation_euler = (math.radians(5), 0, 0)
 head_pose.keyframe_insert(data_path="rotation_euler", frame=8)
 
 # フレーム 12: 元に戻る

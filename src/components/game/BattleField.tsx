@@ -1,0 +1,233 @@
+"use client";
+import { useEffect, useRef } from "react";
+import { Engine, Scene, HemisphericLight, MeshBuilder, Vector3, Mesh } from "@babylonjs/core";
+import { StandardMaterial, Color3, ArcRotateCamera } from "@babylonjs/core";
+import { PhysicsAggregate, PhysicsShapeType } from "@babylonjs/core";
+import { Action } from "@/types/game";
+
+type Props = {
+  isBattling: boolean;
+  playerStats: { spd: number; atk: number; def: number };
+  enemyStats: { spd: number; atk: number; def: number };
+  battleTimer: number;
+  actions: Action[];
+  onActionUsed?: (slotIndex: number) => void;
+};
+
+export default function BattleField({ isBattling, playerStats, enemyStats, battleTimer, actions, onActionUsed }: Props) {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const isBattlingRef = useRef(isBattling);
+  const playerStatsRef = useRef(playerStats);
+  const enemyStatsRef = useRef(enemyStats);
+  const actionsRef = useRef(actions);
+  const onActionUsedRef = useRef(onActionUsed);
+
+  useEffect(() => { isBattlingRef.current = isBattling; }, [isBattling]);
+  useEffect(() => { playerStatsRef.current = playerStats; }, [playerStats]);
+  useEffect(() => { enemyStatsRef.current = enemyStats; }, [enemyStats]);
+  useEffect(() => { actionsRef.current = actions; }, [actions]);
+  useEffect(() => { onActionUsedRef.current = onActionUsed; }, [onActionUsed]);
+
+  useEffect(() => {
+    if (!canvasRef.current) return;
+    let engineRef: Engine | null = null;
+
+    const init = async () => {
+      const engine = new Engine(canvasRef.current!, true);
+      engineRef = engine;
+      const scene = new Scene(engine);
+
+      // Havok 物理エンジン初期化
+      const havok = await import("@babylonjs/havok");
+      const havokInstance = await havok.default();
+      const { HavokPlugin } = await import("@babylonjs/core/Physics/v2/Plugins/havokPlugin");
+      scene.enablePhysics(new Vector3(0, -9.81, 0), new HavokPlugin(true, havokInstance));
+
+      // カメラ・ライト
+      const camera = new ArcRotateCamera("camera", Math.PI / 4, Math.PI / 3, 10, new Vector3(0, 0, 0), scene);
+      camera.attachControl(canvasRef.current!, true);
+      new HemisphericLight("light", new Vector3(0, 1, 0), scene);
+
+      // 盤面
+      const boardMat = new StandardMaterial("boardMat", scene);
+      boardMat.diffuseColor = new Color3(0.87, 0.72, 0.53);
+      const board = MeshBuilder.CreateBox("board", { width: 6, height: 0.2, depth: 6 }, scene);
+      board.material = boardMat;
+      new PhysicsAggregate(board, PhysicsShapeType.BOX, { mass: 0, restitution: 0.3 }, scene);
+
+      // デバッグ用: 見えない壁（リングアウト防止）
+      const wallPositions = [
+        { x: 0, z: 3 },   // 奥
+        { x: 0, z: -3 },  // 手前
+        { x: 3, z: 0 },   // 右
+        { x: -3, z: 0 },  // 左
+      ];
+      const wallSizes = [
+        { width: 6, height: 2, depth: 0.2 },
+        { width: 6, height: 2, depth: 0.2 },
+        { width: 0.2, height: 2, depth: 6 },
+        { width: 0.2, height: 2, depth: 6 },
+      ];
+      wallPositions.forEach((pos, i) => {
+        const wall = MeshBuilder.CreateBox(`wall${i}`, wallSizes[i], scene);
+        wall.position = new Vector3(pos.x, 1, pos.z);
+        wall.isVisible = false;
+        new PhysicsAggregate(wall, PhysicsShapeType.BOX, { mass: 0, restitution: 0.5 }, scene);
+      });
+
+      // 自軍（青）
+      const playerMat = new StandardMaterial("playerMat", scene);
+      playerMat.diffuseColor = new Color3(0, 0.4, 1);
+      const player = MeshBuilder.CreateCylinder("player", { diameter: 0.8, height: 0.6 }, scene);
+      player.material = playerMat;
+      player.position = new Vector3(-2, 0.5, 0);
+      new PhysicsAggregate(player, PhysicsShapeType.CYLINDER, {
+        mass: 1 + playerStats.def * 0.1,
+        restitution: 0.3 + playerStats.atk * 0.05,
+      }, scene);
+
+      // 敵軍（赤）
+      const enemyMat = new StandardMaterial("enemyMat", scene);
+      enemyMat.diffuseColor = new Color3(1, 0.2, 0.2);
+      const enemy = MeshBuilder.CreateCylinder("enemy", { diameter: 0.8, height: 0.6 }, scene);
+      enemy.material = enemyMat;
+      enemy.position = new Vector3(2, 0.5, 0);
+      new PhysicsAggregate(enemy, PhysicsShapeType.CYLINDER, {
+        mass: 1 + enemyStats.def * 0.1,
+        restitution: 0.3 + enemyStats.atk * 0.05,
+      }, scene);
+
+      // 弾を発射する関数
+      function shootBullet(from: Mesh, target: Mesh, power: number) {
+        const bulletMat = new StandardMaterial("bulletMat", scene);
+        bulletMat.diffuseColor = new Color3(1, 1, 0);
+        const bullet = MeshBuilder.CreateSphere("bullet", { diameter: 0.2 }, scene);
+        bullet.material = bulletMat;
+        bullet.position = from.position.clone();
+        bullet.position.y = 0.5;
+
+        new PhysicsAggregate(bullet, PhysicsShapeType.SPHERE, { mass: 0.3, restitution: 0.8 }, scene);
+
+        const direction = target.position.subtract(from.position).normalize();
+        const force = direction.scale(power * 3);
+        setTimeout(() => {
+          if (bullet.physicsBody) {
+            bullet.physicsBody.applyImpulse(force, bullet.getAbsolutePosition());
+          }
+        }, 50);
+
+        // 3秒後に弾を削除
+        setTimeout(() => { bullet.dispose(); }, 3000);
+      }
+
+      // パンチ（相手に大きな衝撃）
+      function punchTarget(from: Mesh, target: Mesh, power: number) {
+        const targetBody = target.physicsBody;
+        if (!targetBody) return;
+        const direction = target.position.subtract(from.position).normalize();
+        const impulse = direction.scale(power * 2);
+        targetBody.applyImpulse(impulse, target.getAbsolutePosition());
+      }
+
+      // ダッシュ（自分を加速）
+      function dashForward(unit: Mesh, target: Mesh, power: number) {
+        const body = unit.physicsBody;
+        if (!body) return;
+        const direction = target.position.subtract(unit.position).normalize();
+        const force = direction.scale(power * 5);
+        body.applyImpulse(force, unit.getAbsolutePosition());
+      }
+
+      // ガード（一時的に重くする）
+      let guardTimeout: ReturnType<typeof setTimeout> | null = null;
+      function activateGuard(unit: Mesh, power: number) {
+        const body = unit.physicsBody;
+        if (!body) return;
+        body.setMassProperties({ mass: 5 + power });
+        if (guardTimeout) clearTimeout(guardTimeout);
+        guardTimeout = setTimeout(() => {
+          body.setMassProperties({ mass: 1 + playerStatsRef.current.def * 0.1 });
+        }, 2000);
+      }
+
+      // 毎フレーム: 移動 + アクション判定
+      scene.onBeforeRenderObservable.add(() => {
+        if (!isBattlingRef.current) return;
+        const playerBody = player.physicsBody;
+        const enemyBody = enemy.physicsBody;
+        if (!playerBody || !enemyBody) return;
+
+        // 基本移動（互いに向かって）
+        const pSpd = playerStatsRef.current.spd * 0.5;
+        const eSpd = enemyStatsRef.current.spd * 0.5;
+        const toEnemy = enemy.position.subtract(player.position).normalize();
+        const toPlayer = player.position.subtract(enemy.position).normalize();
+        playerBody.applyForce(toEnemy.scale(pSpd), player.getAbsolutePosition());
+        enemyBody.applyForce(toPlayer.scale(eSpd), enemy.getAbsolutePosition());
+
+        // 距離を計算
+        const distance = Vector3.Distance(player.position, enemy.position);
+
+        // プレイヤーのアクション判定（CDが溜まっているものを状況に応じて使う）
+        const currentActions = actionsRef.current;
+        for (let i = 0; i < currentActions.length; i++) {
+          const a = currentActions[i];
+          if (a.currentCool > 0) continue; // まだ溜まっていない
+
+          let shouldUse = false;
+          switch (a.type) {
+            case "shoot":
+              shouldUse = distance > 1.5;
+              break;
+            case "punch":
+              shouldUse = distance < 1.5;
+              break;
+            case "dash":
+              shouldUse = distance > 2;
+              break;
+            case "guard":
+              shouldUse = distance < 2;
+              break;
+          }
+
+          if (shouldUse) {
+            switch (a.type) {
+              case "shoot":
+                shootBullet(player, enemy, a.power);
+                break;
+              case "punch":
+                punchTarget(player, enemy, a.power);
+                break;
+              case "dash":
+                dashForward(player, enemy, a.power);
+                break;
+              case "guard":
+                activateGuard(player, a.power);
+                break;
+            }
+            onActionUsedRef.current?.(i);
+          }
+        }
+      });
+
+      engine.runRenderLoop(() => scene.render());
+    };
+
+    init();
+    return () => engineRef?.dispose();
+  }, []);
+
+  return (
+    <div className="relative">
+      <canvas ref={canvasRef} className="w-200 h-200 rounded-lg" />
+      {battleTimer > 0 && (
+        <div className="absolute top-2 left-2 right-2 h-4 bg-zinc-700 rounded overflow-hidden">
+          <div
+            className="h-full bg-yellow-400"
+            style={{ width: `${(1 - battleTimer / 10) * 100}%` }}
+          />
+        </div>
+      )}
+    </div>
+  );
+}

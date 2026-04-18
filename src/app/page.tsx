@@ -18,7 +18,11 @@ export default function Home() {
       将棋×ポーカー
         <Hand>
           {hand.map((card, i) => (
-            <Card key={i} suit={card.suit} rank={card.rank} />  
+            <Card
+              key={i}
+              suit={card.suit}
+              rank={card.rank}
+            />  
           ))}
         </Hand>
         <button

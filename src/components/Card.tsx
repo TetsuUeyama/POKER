@@ -2,9 +2,11 @@
 type CardProps = {
   suit: string;
   rank: string;
+  draggable?: boolean
+  index?: number
 }
 
-export default function Card({ suit, rank }: CardProps)
+export default function Card({ suit, rank, draggable, index }: CardProps)
 {
   const isRed = suit === "♥" || suit === "♦";
   const rankDisplay: Record<string, string> = {                                                 
@@ -15,10 +17,17 @@ export default function Card({ suit, rank }: CardProps)
   return (
     <div
       className={`
-    w-20 h-28 flex flex-col items-center justify-center
-    bg-white border rounded-lg text-2xl font-bold p-2 shadow-md
-    ${isRed ? "text-red-500" : "text-black"}
-  `}>
+        w-20 h-28 flex flex-col items-center justify-center
+        bg-white border rounded-lg text-2xl font-bold p-2 shadow-md
+        ${isRed ? "text-red-500" : "text-black"}
+      `}
+      draggable={draggable}
+      onDragStart={(e) => {
+        if (draggable && index !== undefined) {
+          e.dataTransfer.setData("card-index", index.toString());
+        }
+      }}
+    >
       {suit} {displayRank}
     </div>
   );
