@@ -20,11 +20,11 @@ function createShuffledDeck(): CardType[] {
 
 // 最初から5つのアクションが決まっている
 const DEFAULT_ACTIONS: Action[] = [
-  { type: "shoot", power: 3, cooldown: 2, currentCool: 0 },
+  { type: "shoot", power: 3, cooldown: 0.8, currentCool: 0 },
   { type: "punch", power: 3, cooldown: 3, currentCool: 0 },
   { type: "dash",  power: 3, cooldown: 2, currentCool: 0 },
   { type: "guard", power: 3, cooldown: 4, currentCool: 0 },
-  { type: "shoot", power: 3, cooldown: 2, currentCool: 0 },
+  { type: "shoot", power: 3, cooldown: 0.8, currentCool: 0 },
 ];
 
 export default function BattlePage() {
@@ -126,8 +126,7 @@ export default function BattlePage() {
           setIsBattling(false);
           setPhase("assign");
           setRound((r) => r + 1);
-          // スロットをリセット（カードは消える、アクションは初期値に戻る）
-          setActions(DEFAULT_ACTIONS.map((a) => ({ ...a })));
+          // カードは消えるが、アクションのパワーとチャージ量は引き継ぐ
           setSlotCards([null, null, null, null, null]);
           return 0;
         }

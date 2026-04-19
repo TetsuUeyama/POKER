@@ -1,9 +1,11 @@
 "use client";
 import { useEffect, useRef } from "react";
-import { Engine, Scene, HemisphericLight, MeshBuilder, Vector3, Mesh } from "@babylonjs/core";
+import { Engine, Scene, HemisphericLight, MeshBuilder, Vector3 } from "@babylonjs/core";
 import { StandardMaterial, Color3, ArcRotateCamera } from "@babylonjs/core";
 import { PhysicsAggregate, PhysicsShapeType } from "@babylonjs/core";
 import { Action } from "@/types/game";
+import { createHumanoid } from "@/lib/createHumanoid";
+import { shootBullet, punchTarget, dashForward, activateGuard } from "@/lib/battleActions";
 
 type Props = {
   isBattling: boolean;
@@ -51,22 +53,19 @@ export default function BattleField({ isBattling, playerStats, enemyStats, battl
       // 盤面
       const boardMat = new StandardMaterial("boardMat", scene);
       boardMat.diffuseColor = new Color3(0.87, 0.72, 0.53);
-      const board = MeshBuilder.CreateBox("board", { width: 6, height: 0.2, depth: 6 }, scene);
+      const board = MeshBuilder.CreateBox("board", { width: 10, height: 0.2, depth: 10 }, scene);
       board.material = boardMat;
       new PhysicsAggregate(board, PhysicsShapeType.BOX, { mass: 0, restitution: 0.3 }, scene);
 
-      // デバッグ用: 見えない壁（リングアウト防止）
+      // 見えない壁（リングアウト防止）
       const wallPositions = [
-        { x: 0, z: 3 },   // 奥
-        { x: 0, z: -3 },  // 手前
-        { x: 3, z: 0 },   // 右
-        { x: -3, z: 0 },  // 左
+        { x: 0, z: 5 }, { x: 0, z: -5 }, { x: 5, z: 0 }, { x: -5, z: 0 },
       ];
       const wallSizes = [
-        { width: 6, height: 2, depth: 0.2 },
-        { width: 6, height: 2, depth: 0.2 },
-        { width: 0.2, height: 2, depth: 6 },
-        { width: 0.2, height: 2, depth: 6 },
+        { width: 10, height: 2, depth: 0.2 },
+        { width: 10, height: 2, depth: 0.2 },
+        { width: 0.2, height: 2, depth: 10 },
+        { width: 0.2, height: 2, depth: 10 },
       ];
       wallPositions.forEach((pos, i) => {
         const wall = MeshBuilder.CreateBox(`wall${i}`, wallSizes[i], scene);
@@ -75,134 +74,105 @@ export default function BattleField({ isBattling, playerStats, enemyStats, battl
         new PhysicsAggregate(wall, PhysicsShapeType.BOX, { mass: 0, restitution: 0.5 }, scene);
       });
 
-      // 自軍（青）
-      const playerMat = new StandardMaterial("playerMat", scene);
-      playerMat.diffuseColor = new Color3(0, 0.4, 1);
-      const player = MeshBuilder.CreateCylinder("player", { diameter: 0.8, height: 0.6 }, scene);
-      player.material = playerMat;
-      player.position = new Vector3(-2, 0.5, 0);
-      new PhysicsAggregate(player, PhysicsShapeType.CYLINDER, {
-        mass: 1 + playerStats.def * 0.1,
+      // 物理コライダー（透明）
+      const playerMass = 1 + playerStats.def * 0.1;
+      const playerCollider = MeshBuilder.CreateBox("playerCollider", { width: 0.5, height: 1.3, depth: 0.5 }, scene);
+      playerCollider.position = new Vector3(-3, 0.75, 0);
+      playerCollider.isVisible = false;
+      new PhysicsAggregate(playerCollider, PhysicsShapeType.BOX, {
+        mass: playerMass,
         restitution: 0.3 + playerStats.atk * 0.05,
       }, scene);
 
-      // 敵軍（赤）
-      const enemyMat = new StandardMaterial("enemyMat", scene);
-      enemyMat.diffuseColor = new Color3(1, 0.2, 0.2);
-      const enemy = MeshBuilder.CreateCylinder("enemy", { diameter: 0.8, height: 0.6 }, scene);
-      enemy.material = enemyMat;
-      enemy.position = new Vector3(2, 0.5, 0);
-      new PhysicsAggregate(enemy, PhysicsShapeType.CYLINDER, {
+      const enemyCollider = MeshBuilder.CreateBox("enemyCollider", { width: 0.5, height: 1.3, depth: 0.5 }, scene);
+      enemyCollider.position = new Vector3(3, 0.75, 0);
+      enemyCollider.isVisible = false;
+      new PhysicsAggregate(enemyCollider, PhysicsShapeType.BOX, {
         mass: 1 + enemyStats.def * 0.1,
         restitution: 0.3 + enemyStats.atk * 0.05,
       }, scene);
 
-      // 弾を発射する関数
-      function shootBullet(from: Mesh, target: Mesh, power: number) {
-        const bulletMat = new StandardMaterial("bulletMat", scene);
-        bulletMat.diffuseColor = new Color3(1, 1, 0);
-        const bullet = MeshBuilder.CreateSphere("bullet", { diameter: 0.2 }, scene);
-        bullet.material = bulletMat;
-        bullet.position = from.position.clone();
-        bullet.position.y = 0.5;
+      // 人型モデル
+      const playerModel = createHumanoid(scene, "player", new Color3(0, 0.4, 1), new Vector3(0, 0, 0));
+      const enemyModel = createHumanoid(scene, "enemy", new Color3(1, 0.2, 0.2), new Vector3(0, 0, 0));
+      playerModel.playIdle();
+      enemyModel.playIdle();
 
-        new PhysicsAggregate(bullet, PhysicsShapeType.SPHERE, { mass: 0.3, restitution: 0.8 }, scene);
-
-        const direction = target.position.subtract(from.position).normalize();
-        const force = direction.scale(power * 3);
-        setTimeout(() => {
-          if (bullet.physicsBody) {
-            bullet.physicsBody.applyImpulse(force, bullet.getAbsolutePosition());
-          }
-        }, 50);
-
-        // 3秒後に弾を削除
-        setTimeout(() => { bullet.dispose(); }, 3000);
-      }
-
-      // パンチ（相手に大きな衝撃）
-      function punchTarget(from: Mesh, target: Mesh, power: number) {
-        const targetBody = target.physicsBody;
-        if (!targetBody) return;
-        const direction = target.position.subtract(from.position).normalize();
-        const impulse = direction.scale(power * 2);
-        targetBody.applyImpulse(impulse, target.getAbsolutePosition());
-      }
-
-      // ダッシュ（自分を加速）
-      function dashForward(unit: Mesh, target: Mesh, power: number) {
-        const body = unit.physicsBody;
-        if (!body) return;
-        const direction = target.position.subtract(unit.position).normalize();
-        const force = direction.scale(power * 5);
-        body.applyImpulse(force, unit.getAbsolutePosition());
-      }
-
-      // ガード（一時的に重くする）
-      let guardTimeout: ReturnType<typeof setTimeout> | null = null;
-      function activateGuard(unit: Mesh, power: number) {
-        const body = unit.physicsBody;
-        if (!body) return;
-        body.setMassProperties({ mass: 5 + power });
-        if (guardTimeout) clearTimeout(guardTimeout);
-        guardTimeout = setTimeout(() => {
-          body.setMassProperties({ mass: 1 + playerStatsRef.current.def * 0.1 });
-        }, 2000);
-      }
-
-      // 毎フレーム: 移動 + アクション判定
+      // メインループ
+      let wasBattling = false;
       scene.onBeforeRenderObservable.add(() => {
-        if (!isBattlingRef.current) return;
-        const playerBody = player.physicsBody;
-        const enemyBody = enemy.physicsBody;
+        // モデル追従
+        playerModel.root.position.x = playerCollider.position.x;
+        playerModel.root.position.z = playerCollider.position.z;
+        playerModel.root.position.y = Math.max(0.1, playerCollider.position.y - 0.75);
+
+        enemyModel.root.position.x = enemyCollider.position.x;
+        enemyModel.root.position.z = enemyCollider.position.z;
+        enemyModel.root.position.y = Math.max(0.1, enemyCollider.position.y - 0.75);
+
+        // 向き
+        const toEnemyDir = enemyCollider.position.subtract(playerCollider.position);
+        const toPlayerDir = playerCollider.position.subtract(enemyCollider.position);
+        playerModel.root.rotation.y = Math.atan2(toEnemyDir.x, toEnemyDir.z);
+        enemyModel.root.rotation.y = Math.atan2(toPlayerDir.x, toPlayerDir.z);
+
+        if (!isBattlingRef.current) {
+          if (wasBattling) {
+            playerModel.playIdle();
+            enemyModel.playIdle();
+            wasBattling = false;
+          }
+          return;
+        }
+
+        if (!wasBattling) {
+          playerModel.playWalk();
+          enemyModel.playWalk();
+          wasBattling = true;
+        }
+
+        const playerBody = playerCollider.physicsBody;
+        const enemyBody = enemyCollider.physicsBody;
         if (!playerBody || !enemyBody) return;
 
-        // 基本移動（互いに向かって）
+        // 基本移動
         const pSpd = playerStatsRef.current.spd * 0.5;
         const eSpd = enemyStatsRef.current.spd * 0.5;
-        const toEnemy = enemy.position.subtract(player.position).normalize();
-        const toPlayer = player.position.subtract(enemy.position).normalize();
-        playerBody.applyForce(toEnemy.scale(pSpd), player.getAbsolutePosition());
-        enemyBody.applyForce(toPlayer.scale(eSpd), enemy.getAbsolutePosition());
+        const toEnemy = enemyCollider.position.subtract(playerCollider.position).normalize();
+        const toPlayer = playerCollider.position.subtract(enemyCollider.position).normalize();
+        playerBody.applyForce(toEnemy.scale(pSpd), playerCollider.getAbsolutePosition());
+        enemyBody.applyForce(toPlayer.scale(eSpd), enemyCollider.getAbsolutePosition());
 
-        // 距離を計算
-        const distance = Vector3.Distance(player.position, enemy.position);
+        // 距離
+        const distance = Vector3.Distance(playerCollider.position, enemyCollider.position);
 
-        // プレイヤーのアクション判定（CDが溜まっているものを状況に応じて使う）
+        // アクション判定
         const currentActions = actionsRef.current;
         for (let i = 0; i < currentActions.length; i++) {
           const a = currentActions[i];
-          if (a.currentCool > 0) continue; // まだ溜まっていない
+          if (a.currentCool > 0) continue;
 
           let shouldUse = false;
           switch (a.type) {
-            case "shoot":
-              shouldUse = distance > 1.5;
-              break;
-            case "punch":
-              shouldUse = distance < 1.5;
-              break;
-            case "dash":
-              shouldUse = distance > 2;
-              break;
-            case "guard":
-              shouldUse = distance < 2;
-              break;
+            case "shoot": shouldUse = distance > 1.5; break;
+            case "punch": shouldUse = distance < 1.5; break;
+            case "dash":  shouldUse = distance > 2; break;
+            case "guard": shouldUse = distance < 2; break;
           }
 
           if (shouldUse) {
             switch (a.type) {
               case "shoot":
-                shootBullet(player, enemy, a.power);
+                shootBullet(scene, playerCollider, enemyCollider, a.power, playerModel);
                 break;
               case "punch":
-                punchTarget(player, enemy, a.power);
+                punchTarget(playerCollider, enemyCollider, a.power, playerModel);
                 break;
               case "dash":
-                dashForward(player, enemy, a.power);
+                dashForward(playerCollider, enemyCollider, a.power);
                 break;
               case "guard":
-                activateGuard(player, a.power);
+                activateGuard(playerCollider, a.power, playerModel, playerMass);
                 break;
             }
             onActionUsedRef.current?.(i);

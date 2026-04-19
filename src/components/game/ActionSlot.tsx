@@ -40,10 +40,10 @@ export default function ActionSlot({ action, onDropCard, onRemove, onActivate, i
       <div className="text-white">
         <div className="font-bold">{actionName[action.type]}</div>
         <div>威力: {action.power}</div>
-        {/* クールダウンバー */}
+        {/* チャージバー */}
         <div className="w-full h-2 bg-zinc-700 rounded overflow-hidden mt-1">
           <div
-            className="h-full bg-cyan-400"
+            className={`h-full ${action.currentCool <= 0 && isBattling ? "bg-green-400" : "bg-cyan-400"}`}
             style={{ width: `${(1 - action.currentCool / action.cooldown) * 100}%` }}
           />
         </div>
